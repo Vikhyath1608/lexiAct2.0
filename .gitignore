@@ -47,3 +47,6 @@ logs/
 
 # TTS temp files
 /tmp/*.mp3
+
+# Local contacts data
+/backend/app/automation/contacts.json
