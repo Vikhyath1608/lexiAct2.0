@@ -2,10 +2,7 @@
 app/main.py
 ───────────
 FastAPI application factory.
-- Prometheus metrics via prometheus-fastapi-instrumentator v6
-- Structured JSON logging via structlog
-- Rate limiting + request logging middleware
-- Real health check pinging all dependencies
+Updated health check to ping Gemini instead of Groq.
 """
 from __future__ import annotations
 from contextlib import asynccontextmanager
@@ -42,14 +39,13 @@ def create_app() -> FastAPI:
         description=(
             "LexiAct — AI-Powered Personal Assistant API. "
             "JWT auth, refresh tokens, OTP, Google/GitHub OAuth, "
-            "Groq LLM, Celery background jobs, Strategy pattern automation."
+            "Google Gemini LLM, Celery background jobs, Strategy pattern automation."
         ),
         docs_url="/docs",
         redoc_url="/redoc",
         lifespan=lifespan,
     )
 
-    # ── Middleware ────────────────────────────────────────────────────────────
     app.add_middleware(RequestLoggingMiddleware)
     app.add_middleware(RateLimitMiddleware)
     app.add_middleware(
@@ -60,7 +56,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # ── Prometheus metrics ────────────────────────────────────────────────────
+    # Prometheus metrics
     try:
         from prometheus_fastapi_instrumentator import Instrumentator
         Instrumentator(
@@ -70,13 +66,11 @@ def create_app() -> FastAPI:
     except Exception as e:
         logger.warning("prometheus_setup_failed", error=str(e))
 
-    # ── API routes ────────────────────────────────────────────────────────────
     app.include_router(api_router)
 
-    # ── Health: liveness ──────────────────────────────────────────────────────
+    # ── Liveness ──────────────────────────────────────────────────────────────
     @app.get("/health", tags=["Health"])
     async def health_liveness():
-        """Is the process alive?"""
         return {
             "status": "ok",
             "app": settings.app_name,
@@ -84,13 +78,9 @@ def create_app() -> FastAPI:
             "environment": settings.environment,
         }
 
-    # ── Health: readiness ─────────────────────────────────────────────────────
+    # ── Readiness ─────────────────────────────────────────────────────────────
     @app.get("/health/ready", tags=["Health"])
     async def health_readiness():
-        """
-        Are all dependencies reachable?
-        Returns 503 if any critical dependency is down.
-        """
         import asyncio
         from sqlalchemy import text
         from app.db.database import engine
@@ -112,8 +102,8 @@ def create_app() -> FastAPI:
         except Exception as e:
             results["redis"] = f"error: {str(e)[:80]}"
 
-        # Groq API key check (lightweight)
-        results["groq"] = "ok" if settings.groq_api_key else "warning: GROQ_API_KEY not set"
+        # Gemini API key check
+        results["gemini"] = "ok" if settings.gemini_api_key else "warning: GEMINI_API_KEY not set"
 
         has_error = any(v.startswith("error") for v in results.values())
         return JSONResponse(

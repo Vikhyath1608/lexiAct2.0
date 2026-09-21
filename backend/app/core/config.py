@@ -2,7 +2,7 @@
 app/core/config.py
 ──────────────────
 Single source of truth for all configuration.
-Every value read from environment / .env — zero hardcoded secrets.
+Switched from Groq to Google Gemini for LLM.
 """
 from __future__ import annotations
 from functools import lru_cache
@@ -22,8 +22,8 @@ class Settings(BaseSettings):
     # ── Security ──────────────────────────────────────────────────────────────
     secret_key: str = "dev-secret-change-in-production"
     algorithm: str = "HS256"
-    access_token_expire_minutes: int = 15          # short-lived
-    refresh_token_expire_days: int = 7             # long-lived
+    access_token_expire_minutes: int = 15
+    refresh_token_expire_days: int = 7
 
     # ── Database ──────────────────────────────────────────────────────────────
     database_url: str = "postgresql+asyncpg://lexiact:lexiact_pass@localhost:5432/lexiact_db"
@@ -42,16 +42,16 @@ class Settings(BaseSettings):
     celery_result_backend: str = "redis://localhost:6379/2"
 
     # ── OTP ───────────────────────────────────────────────────────────────────
-    otp_expire_seconds: int = 600          # 10 minutes
-    password_reset_expire_seconds: int = 900  # 15 minutes
+    otp_expire_seconds: int = 600
+    password_reset_expire_seconds: int = 900
 
-    # ── Groq ──────────────────────────────────────────────────────────────────
-    groq_api_key: str = ""
-    groq_model: str = "llama-3.3-70b-versatile"
-    groq_max_tokens: int = 1024
-    groq_temperature: float = 0.7
-    conversation_context_window: int = 20
-    groq_timeout_seconds: float = 30.0
+    # ── Google Gemini LLM ────────────────────────────────────────────────────
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.0-flash"
+    gemini_max_tokens: int = 1024
+    gemini_temperature: float = 0.7
+    gemini_context_window: int = 20
+    gemini_timeout_seconds: float = 30.0
 
     # ── Email ─────────────────────────────────────────────────────────────────
     from_email: str = ""
