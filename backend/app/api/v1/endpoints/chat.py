@@ -1,10 +1,11 @@
 """
 app/api/v1/endpoints/chat.py
 ─────────────────────────────
-POST   /chat/message          — send message → automation or Groq
-GET    /chat/history          — paginated conversation history
-DELETE /chat/history          — clear session history
-GET    /chat/sessions         — paginated list of session IDs
+Chat endpoints — uses Gemini instead of Groq.
+POST   /chat/message
+GET    /chat/history
+DELETE /chat/history
+GET    /chat/sessions
 """
 from __future__ import annotations
 import asyncio
@@ -22,7 +23,7 @@ from app.schemas.chat import (
     ConversationEntry, HistoryResponse, SessionsResponse,
 )
 from app.automation.dispatcher import dispatch
-from app.services.groq_service import get_groq_response
+from app.services.gemini_service import get_gemini_response
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 logger = get_logger(__name__)
@@ -71,15 +72,21 @@ async def send_message(
             automation_type=result.automation_type,
         )
 
-    # ── Groq AI fallback ──────────────────────────────────────────────────────
+    # ── Gemini AI ─────────────────────────────────────────────────────────────
     history = await _get_history_for_context(db, current_user.id, session_id)
     try:
-        ai_response = await get_groq_response(prompt, history)
+        ai_response = await get_gemini_response(prompt, history)
     except asyncio.TimeoutError:
-        raise HTTPException(status.HTTP_504_GATEWAY_TIMEOUT, "AI response timed out. Please try again.")
+        raise HTTPException(
+            status.HTTP_504_GATEWAY_TIMEOUT,
+            "AI response timed out. Please try again."
+        )
     except Exception as e:
-        logger.error("groq_error", error=str(e), user_id=current_user.id)
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "AI service temporarily unavailable.")
+        logger.error("gemini_error", error=str(e), user_id=current_user.id)
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY,
+            "AI service temporarily unavailable."
+        )
 
     await _save_turn(db, current_user.id, session_id, prompt, ai_response)
     return ChatResponse(response=ai_response, session_id=session_id)
@@ -93,7 +100,6 @@ async def get_history(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # Total count
     total_result = await db.execute(
         select(func.count()).where(
             Conversation.user_id == current_user.id,
@@ -102,10 +108,10 @@ async def get_history(
     )
     total = total_result.scalar_one()
 
-    # Paginated results
     result = await db.execute(
         select(Conversation)
-        .where(Conversation.user_id == current_user.id, Conversation.session_id == session_id)
+        .where(Conversation.user_id == current_user.id,
+               Conversation.session_id == session_id)
         .order_by(Conversation.created_at)
         .limit(limit)
         .offset(offset)
@@ -115,9 +121,7 @@ async def get_history(
     return HistoryResponse(
         session_id=session_id,
         messages=[ConversationEntry.model_validate(r) for r in rows],
-        total=total,
-        limit=limit,
-        offset=offset,
+        total=total, limit=limit, offset=offset,
     )
 
 
@@ -142,7 +146,6 @@ async def list_sessions(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # Total distinct sessions
     total_result = await db.execute(
         select(func.count(distinct(Conversation.session_id)))
         .where(Conversation.user_id == current_user.id)
@@ -152,8 +155,7 @@ async def list_sessions(
     result = await db.execute(
         select(distinct(Conversation.session_id))
         .where(Conversation.user_id == current_user.id)
-        .limit(limit)
-        .offset(offset)
+        .limit(limit).offset(offset)
     )
     sessions = [row[0] for row in result.all()]
 
@@ -163,7 +165,7 @@ async def list_sessions(
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 async def _save_turn(db, user_id, session_id, user_msg, assistant_msg):
-    db.add(Conversation(user_id=user_id, session_id=session_id, role="user", content=user_msg))
+    db.add(Conversation(user_id=user_id, session_id=session_id, role="user",    content=user_msg))
     db.add(Conversation(user_id=user_id, session_id=session_id, role="assistant", content=assistant_msg))
 
 
@@ -173,7 +175,7 @@ async def _get_history_for_context(db, user_id, session_id) -> list[dict]:
         select(Conversation)
         .where(Conversation.user_id == user_id, Conversation.session_id == session_id)
         .order_by(Conversation.created_at.desc())
-        .limit(settings.conversation_context_window)
+        .limit(settings.gemini_context_window)
     )
     rows = result.scalars().all()
     return [{"role": r.role, "content": r.content} for r in reversed(rows)]
@@ -181,7 +183,7 @@ async def _get_history_for_context(db, user_id, session_id) -> list[dict]:
 
 async def _start_email_workflow(ekey: str, prompt: str) -> str:
     from app.automation.contacts import get_contacts
-    from app.services.groq_service import generate_email_draft
+    from app.services.gemini_service import generate_email_draft
     contacts = get_contacts()
     recipient_name = recipient_email = ""
     for name, email_addr in contacts.items():
@@ -204,7 +206,7 @@ async def _start_email_workflow(ekey: str, prompt: str) -> str:
 
 
 async def _handle_email_followup(ekey: str, prompt: str, ctx: dict) -> str:
-    from app.services.groq_service import generate_email_draft
+    from app.services.gemini_service import generate_email_draft
     p = prompt.strip().lower()
     if ctx.get("expecting_change"):
         ctx["expecting_change"] = False
